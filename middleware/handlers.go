@@ -12,6 +12,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 )
 
 type Response struct {
@@ -61,7 +62,7 @@ func GetStockById(w http.ResponseWriter, r *http.Request) {
 		log.Fatalf("Unable to convert the string into int. %v", err)
 	}
 
-	stock, err := getStock(int64(id))
+	stock, err := getStockById(int64(id))
 	if err != nil {
 		log.Fatalf("Unable to get stock. %v", err)
 	}
@@ -139,4 +140,119 @@ func DeleteStock(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(res)
+}
+
+func insertStock(stock models.Stock) int64 {
+	db := DatabaseConnection()
+	defer db.Close()
+
+	var id int64
+	insertQuery := `insert into stocks (name, price, company) values($1, $2, $3) RETURNING stockid`
+
+	err := db.QueryRow(insertQuery, stock.Name, stock.Price, stock.Company).Scan(&id)
+
+	if err != nil {
+		log.Fatalf("Unable to execute the query. %v", err)
+	}
+
+	fmt.Printf("Inserted a single record %v", id)
+
+	return id
+}
+
+func getStockById(id int64) (models.Stock, error) {
+	db := DatabaseConnection()
+
+	defer db.Close()
+	var stock models.Stock
+	getStockQuery := `select * from stocks where stockid=$1`
+
+	err := db.QueryRow(getStockQuery, id).Scan(&stock.StockId, &stock.Name, &stock.Price, &stock.Company)
+
+	switch err {
+	case sql.ErrNoRows:
+		fmt.Println("No rows were returned!")
+		return stock, err
+	case nil:
+		return stock, nil
+	default:
+		log.Fatalf("Unable to execute the query. %v", err)
+	}
+
+	return stock, err
+}
+
+func getAllstocks() ([]models.Stock, error) {
+	db := DatabaseConnection()
+	defer db.Close()
+
+	var stocks []models.Stock
+
+	getStocksQuery := `select * from stocks`
+
+	rows, err := db.Query(getStocksQuery)
+	if err != nil {
+		log.Fatalf("Unable to execute the query. %v", err)
+	}
+
+	defer rows.Close()
+
+	for rows.Next() {
+		var stock models.Stock
+
+		err = rows.Scan(&stock.StockId, &stock.Name, &stock.Price, &stock.Company)
+		if err != nil {
+			log.Fatalf("Unable to scan the row. %v", err)
+		}
+
+		stocks = append(stocks, stock)
+	}
+
+	return stocks, err
+}
+
+func updateStock(id int64, stock models.Stock) int64 {
+	db := DatabaseConnection()
+	defer db.Close()
+
+	updateQuery := `update stocks set name=$2, price=$3, company=$4 where stockid=$1`
+
+	res, err := db.Exec(updateQuery, id, stock.Name, stock.Price, stock.Company)
+
+	if err != nil {
+		log.Fatalf("Unable to execute the query. %v", err)
+	}
+
+	rowsAffected, err := res.RowsAffected()
+
+	if err != nil {
+		log.Fatalf("Error while checking the affected rows. %v", err)
+	}
+
+	fmt.Printf("Total rows/record affected %v", rowsAffected)
+
+	return rowsAffected
+}
+
+func deleteStock(id int64) int64 {
+	db := DatabaseConnection()
+	defer db.Close()
+
+	deleteQuery := `delete from stocks where stockid=$1`
+
+	res, err := db.Exec(deleteQuery, id)
+
+	if err != nil {
+		log.Fatalf("Unable to execute the query. %v", err)
+	}
+
+	rowsAffected, err := res.RowsAffected()
+
+	if err != nil {
+		log.Fatalf("Error while checking the affected rows. %v", err)
+	}
+
+	fmt.Printf("Total rows/record affected %v", rowsAffected)
+
+	return rowsAffected
 }
